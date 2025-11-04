@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/components/auth-context'
 import { useRouter } from 'next/navigation'
-import { Trash2, MapPin, Navigation, Calendar, Loader, Wind, TrendingUp, Clock, AlertCircle, CheckCircle } from 'lucide-react'
+import { Trash2, MapPin, Navigation, Calendar, Loader, Wind, TrendingUp, Clock, AlertCircle, CheckCircle, RotateCw } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface RouteDetail {
@@ -43,6 +43,7 @@ export default function SearchHistoryPage() {
   const [searches, setSearches] = useState<SearchRecord[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null)
+  const [showDeleteAllConfirm, setShowDeleteAllConfirm] = useState(false)
 
   // Redirect if not authenticated
   useEffect(() => {
@@ -59,7 +60,8 @@ export default function SearchHistoryPage() {
       try {
         console.log("📥 [SearchHistory] Fetching history for user:", user?.email);
         
-        const response = await fetch('/api/search', {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
+        const response = await fetch(`${backendUrl}/api/search`, {
           credentials: 'include',
         })
 
@@ -101,7 +103,8 @@ export default function SearchHistoryPage() {
   const handleDeleteSearch = async (searchId: string) => {
     setIsDeletingId(searchId)
     try {
-      const response = await fetch(`/api/search/${searchId}`, {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
+      const response = await fetch(`${backendUrl}/api/search/${searchId}`, {
         method: 'DELETE',
         credentials: 'include',
       })
@@ -127,12 +130,63 @@ export default function SearchHistoryPage() {
     }
   }
 
-  const handleDeleteAll = async () => {
-    if (!confirm('Are you sure you want to delete all search history?')) return
+  const handleSearchAgain = (search: SearchRecord) => {
+    // Save the search parameters to localStorage for quick restoration
+    const searchState = {
+      startCity: search.source,
+      endCity: search.destination,
+      submitted: true,
+      aqiData: [
+        {
+          city: search.source,
+          aqi: search.sourceAQI?.aqi || 50,
+          temperature: search.sourceAQI?.temperature || 25,
+          humidity: search.sourceAQI?.humidity || 60,
+        },
+        {
+          city: search.destination,
+          aqi: search.destinationAQI?.aqi || 50,
+          temperature: search.destinationAQI?.temperature || 25,
+          humidity: search.destinationAQI?.humidity || 60,
+        },
+      ],
+      routeOptions: search.routes?.map((route) => ({
+        id: route.type,
+        name:
+          route.type === 'healthiest'
+            ? '🌿 Healthiest'
+            : route.type === 'fastest'
+            ? '⚡ Fastest'
+            : '⚖️ Balanced',
+        type: route.type,
+        distance: route.distance,
+        time: route.duration,
+        avgAQI: route.avgAQI,
+        pollution: route.pollution,
+        description: route.description,
+        icon:
+          route.type === 'healthiest'
+            ? '🌿'
+            : route.type === 'fastest'
+            ? '⚡'
+            : '⚖️',
+      })) || [],
+      selectedRoute: search.selectedRoute || null,
+      actualDistance: search.routes?.[0]?.distance || 1350,
+    };
 
+    localStorage.setItem('lastSearch', JSON.stringify(searchState));
+    console.log('🔄 Saved search state and navigating to search page');
+    // Navigate to search page
+    router.push('/search');
+  }
+
+  const handleDeleteAll = async () => {
+    setShowDeleteAllConfirm(false)
     setIsLoading(true)
     try {
-      const response = await fetch('/api/search', {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:5000";
+      const response = await fetch(`${backendUrl}/api/search`, {
         method: 'DELETE',
         credentials: 'include',
       })
@@ -143,13 +197,13 @@ export default function SearchHistoryPage() {
 
       setSearches([])
       toast({
-        title: 'Cleared',
-        description: 'All search history has been deleted',
+        title: '✅ Cleared',
+        description: 'All search history has been permanently deleted',
       })
     } catch (err) {
       console.error('Error deleting all searches:', err)
       toast({
-        title: 'Error',
+        title: '❌ Error',
         description: 'Failed to clear search history',
         variant: 'destructive',
       })
@@ -186,17 +240,66 @@ export default function SearchHistoryPage() {
 
         {/* Controls */}
         {searches.length > 0 && (
-          <div className="mb-6 flex justify-between items-center">
-            <div className="text-sm text-muted-foreground">
-              {searches.length} search{searches.length !== 1 ? 'es' : ''} found
+          <div className="mb-8">
+            <div className="flex justify-between items-center bg-card border-2 border-primary rounded-lg p-6">
+              <div>
+                <div className="text-sm font-semibold text-primary mb-1">Total Searches</div>
+                <div className="text-3xl font-bold text-foreground">
+                  {searches.length} search{searches.length !== 1 ? 'es' : ''}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowDeleteAllConfirm(true)}
+                  disabled={isLoading}
+                  className="px-6 py-3 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center gap-2 shadow-md hover:shadow-lg"
+                >
+                  <Trash2 className="w-5 h-5" />
+                  Clear All History
+                </button>
+              </div>
             </div>
-            <button
-              onClick={handleDeleteAll}
-              disabled={isLoading}
-              className="px-4 py-2 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Clear All History
-            </button>
+
+            {/* Delete All Confirmation Modal */}
+            {showDeleteAllConfirm && (
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-card border-2 border-destructive rounded-lg p-8 max-w-sm mx-4 shadow-2xl">
+                  <div className="flex items-center gap-3 mb-4">
+                    <AlertCircle className="w-6 h-6 text-destructive" />
+                    <h3 className="text-xl font-bold text-foreground">Delete All History?</h3>
+                  </div>
+                  <p className="text-muted-foreground mb-6 text-sm">
+                    This will permanently delete all {searches.length} search record{searches.length !== 1 ? 's' : ''} from your history. This action cannot be undone.
+                  </p>
+                  <div className="flex gap-3 justify-end">
+                    <button
+                      onClick={() => setShowDeleteAllConfirm(false)}
+                      disabled={isLoading}
+                      className="px-4 py-2 bg-muted text-foreground rounded-lg hover:bg-muted/80 transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleDeleteAll}
+                      disabled={isLoading}
+                      className="px-4 py-2 bg-destructive text-destructive-foreground rounded-lg hover:bg-destructive/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 font-semibold"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader className="w-4 h-4 animate-spin" />
+                          Deleting...
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          Delete All
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -246,19 +349,28 @@ export default function SearchHistoryPage() {
                       </div>
                     </div>
 
-                    {/* Delete Button */}
-                    <button
-                      onClick={() => handleDeleteSearch(search._id)}
-                      disabled={isDeletingId === search._id}
-                      className="px-4 py-2 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                    >
-                      {isDeletingId === search._id ? (
-                        <Loader className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
-                      Delete
-                    </button>
+                    {/* Action Buttons */}
+                    <div className="flex gap-2 items-center">
+                      <button
+                        onClick={() => handleSearchAgain(search)}
+                        className="px-4 py-2 bg-primary/10 text-primary hover:bg-primary/20 rounded-lg transition-colors flex items-center gap-2"
+                      >
+                        <RotateCw className="w-4 h-4" />
+                        Search Again
+                      </button>
+                      <button
+                        onClick={() => handleDeleteSearch(search._id)}
+                        disabled={isDeletingId === search._id}
+                        className="px-4 py-2 bg-destructive/10 text-destructive hover:bg-destructive/20 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {isDeletingId === search._id ? (
+                          <Loader className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="w-4 h-4" />
+                        )}
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
 

@@ -114,6 +114,39 @@ export const getSearchHistory = async (req, res) => {
   }
 };
 
+// Get a specific search by ID
+export const getSearchById = async (req, res) => {
+  try {
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      console.error("❌ [getSearchById] No userId found");
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const searchId = req.params.id;
+    const search = await SearchHistory.findById(searchId);
+
+    if (!search) {
+      return res.status(404).json({ error: "Search not found" });
+    }
+
+    // Verify ownership
+    if (search.userId.toString() !== userId.toString()) {
+      return res
+        .status(403)
+        .json({ error: "Not authorized to view this search" });
+    }
+
+    console.log(
+      `✅ [getSearchById] Retrieved search ${searchId} for user ${userId}`
+    );
+    res.json({ search });
+  } catch (err) {
+    console.error("❌ [getSearchById] error fetching search:", err.message);
+    res.status(500).json({ error: "Server error", details: err.message });
+  }
+};
+
 // Delete a single search by ID
 export const deleteSearch = async (req, res) => {
   try {

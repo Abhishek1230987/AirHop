@@ -52,23 +52,73 @@ export default function SearchPage() {
   const [actualDistance, setActualDistance] = useState<number>(1350);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load previous search from localStorage on mount
+  // Load previous search from localStorage or history on mount
   useEffect(() => {
     if (!loading && user) {
-      const savedSearch = localStorage.getItem("lastSearch");
-      if (savedSearch) {
-        try {
-          const search = JSON.parse(savedSearch);
-          console.log("📂 Restoring previous search:", search);
-          setStartCity(search.startCity || "");
-          setEndCity(search.endCity || "");
-          setSubmitted(search.submitted || false);
-          setAqiData(search.aqiData || []);
-          setRouteOptions(search.routeOptions || []);
-          setSelectedRoute(search.selectedRoute || null);
-          setActualDistance(search.actualDistance || 1350);
-        } catch (err) {
-          console.error("Error loading previous search:", err);
+      const params = new URLSearchParams(window.location.search);
+      const restoreId = params.get("restore");
+      
+      if (restoreId) {
+        console.log("🔄 Restoring search from history with ID:", restoreId);
+        const fetchSpecificSearch = async () => {
+          try {
+            const response = await fetch(`/api/search/${restoreId}`, {
+              credentials: 'include',
+            });
+            
+            if (!response.ok) {
+              throw new Error('Failed to fetch search');
+            }
+            
+            const data = await response.json();
+            const search = data.search;
+            
+            console.log("✅ Restored search:", search);
+            setStartCity(search.source || "");
+            setEndCity(search.destination || "");
+            setSubmitted(true);
+            setAqiData([
+              { city: search.source, aqi: search.sourceAQI?.aqi || 50, temperature: search.sourceAQI?.temperature || 25, humidity: search.sourceAQI?.humidity || 60 },
+              { city: search.destination, aqi: search.destinationAQI?.aqi || 50, temperature: search.destinationAQI?.temperature || 25, humidity: search.destinationAQI?.humidity || 60 }
+            ]);
+            
+            if (search.routes && search.routes.length > 0) {
+              const routes = search.routes.map((route: any) => ({
+                id: route.type,
+                name: route.type === 'healthiest' ? '🌿 Healthiest' : route.type === 'fastest' ? '⚡ Fastest' : '⚖️ Balanced',
+                type: route.type,
+                distance: route.distance,
+                time: route.duration,
+                avgAQI: route.avgAQI,
+                pollution: route.pollution,
+                description: route.description,
+                icon: route.type === 'healthiest' ? '🌿' : route.type === 'fastest' ? '⚡' : '⚖️',
+              }));
+              setRouteOptions(routes);
+              setSelectedRoute(search.selectedRoute || null);
+            }
+          } catch (err) {
+            console.error("Error restoring search:", err);
+          }
+        };
+        
+        fetchSpecificSearch();
+      } else {
+        const savedSearch = localStorage.getItem("lastSearch");
+        if (savedSearch) {
+          try {
+            const search = JSON.parse(savedSearch);
+            console.log("📂 Restoring previous search:", search);
+            setStartCity(search.startCity || "");
+            setEndCity(search.endCity || "");
+            setSubmitted(search.submitted || false);
+            setAqiData(search.aqiData || []);
+            setRouteOptions(search.routeOptions || []);
+            setSelectedRoute(search.selectedRoute || null);
+            setActualDistance(search.actualDistance || 1350);
+          } catch (err) {
+            console.error("Error loading previous search:", err);
+          }
         }
       }
       setIsInitialized(true);
